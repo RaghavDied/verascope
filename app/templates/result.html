@@ -1,0 +1,16 @@
+<!doctype html>
+<html>
+<head>
+  <title>VeraScope - Result</title>
+</head>
+<body>
+  <h1>VeraScope</h1>
+  <h2>{{ result.prediction }} — {{ result.confidence_pct }}% confidence</h2>
+  <p>Real: {{ result.real_pct }}% | Fake: {{ result.fake_pct }}%</p>
+  <p>{{ result.explanation }}</p>
+  <p><i>{{ result.recommendation }}</i></p>
+
+  <a href="/">Analyze another file</a>
+</body>
+</html>
+

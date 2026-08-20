@@ -1,0 +1,15 @@
+<!doctype html>
+<html>
+<head>
+  <title>VeraScope</title>
+</head>
+<body>
+  <h1>VeraScope</h1>
+  <p>Upload an image or video to check if it's real or fake.</p>
+
+  <form action="/analyze" method="post" enctype="multipart/form-data">
+    <input type="file" name="media" accept=".jpg,.jpeg,.png,.mp4,.avi" required>
+    <button type="submit">Analyze</button>
+  </form>
+</body>
+</html>

@@ -1,0 +1,10 @@
+flask
+opencv-python
+numpy
+pillow
+torch
+torchvision
+timm
+grad-cam
+reportlab
+werkzeug
