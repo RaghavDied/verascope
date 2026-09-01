@@ -1,6 +1,7 @@
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image as RLImage
 from reportlab.lib.styles import getSampleStyleSheet
+import os
 
 def generate_report_pdf(result, filename, upload_time, media_type, out_path):
     styles = getSampleStyleSheet()
@@ -19,6 +20,12 @@ def generate_report_pdf(result, filename, upload_time, media_type, out_path):
     story.append(Paragraph(f"Confidence: {result['confidence_pct']}%", styles["Normal"]))
     story.append(Paragraph(f"Real: {result['real_pct']}% | Fake: {result['fake_pct']}%", styles["Normal"]))
     story.append(Spacer(1, 12))
+
+    heatmap_path = result.get("heatmap_path")
+    if heatmap_path and os.path.exists(heatmap_path):
+        story.append(Paragraph("Explainability Heatmap", styles["Heading2"]))
+        story.append(RLImage(heatmap_path, width=200, height=200))
+        story.append(Spacer(1, 12))
 
     story.append(Paragraph("Explanation", styles["Heading2"]))
     story.append(Paragraph(result["explanation"], styles["Normal"]))
