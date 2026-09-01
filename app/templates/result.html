@@ -1,29 +1,46 @@
-<!doctype html>
-<html>
-<head>
-  <title>VeraScope - Result</title>
-</head>
-<body>
-  <h1>VeraScope</h1>
-  <p>File: {{ filename }} | Uploaded: {{ upload_time }}</p>
-  <p>Media type: {{ media_type }}</p>
-  <h2>{{ result.prediction }} — {{ result.confidence_pct }}% confidence</h2>
-  <p>Real: {{ result.real_pct }}% | Fake: {{ result.fake_pct }}%</p>
+{% extends "base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8">
+    <div class="card p-4">
+      <h4>Verification Result</h4>
+      <p class="text-muted mb-1">File: {{ filename }} ({{ media_type }})</p>
+      <p class="text-muted">Uploaded: {{ upload_time }}</p>
 
-  {% if media_type == "video" %}
-    <p>Frames analyzed: {{ result.frames_analyzed }} | Frames flagged fake: {{ result.frames_flagged_fake }}</p>
-  {% endif %}
+      <h2 class="{{ 'verdict-fake' if result.prediction == 'Fake' else 'verdict-real' }}">
+        {{ result.prediction }} &mdash; {{ result.confidence_pct }}% confidence
+      </h2>
 
-  <h3>Explainability Heatmap</h3>
-  {% if result.heatmap_url %}
-    <img src="{{ result.heatmap_url }}" width="300">
-  {% else %}
-    <p><i>(No heatmap yet — this will show the Grad-CAM output once the real model is connected.)</i></p>
-  {% endif %}
+      <div class="progress my-3" style="height: 24px;">
+        <div class="progress-bar bg-success" style="width: {{ result.real_pct }}%">Real {{ result.real_pct }}%</div>
+        <div class="progress-bar bg-danger" style="width: {{ result.fake_pct }}%">Fake {{ result.fake_pct }}%</div>
+      </div>
 
-  <p>{{ result.explanation }}</p>
-  <p><i>{{ result.recommendation }}</i></p>
-  <p><a href="{{ url_for('download_report', report_id=report_id) }}">Download Full Report (PDF)</a></p>
-  <a href="/">Analyze another file</a>
-</body>
-</html>
+      {% if media_type == "video" %}
+        <p class="text-muted">
+          Frames analyzed: {{ result.frames_analyzed }} &middot;
+          Frames flagged fake: {{ result.frames_flagged_fake }}
+        </p>
+      {% endif %}
+
+      <h5 class="mt-4">Explainability Heatmap</h5>
+      {% if result.heatmap_url %}
+        <img src="{{ result.heatmap_url }}" class="img-fluid rounded mb-3" style="max-width: 260px;">
+      {% else %}
+        <p><i>(No heatmap yet.)</i></p>
+      {% endif %}
+
+      <h5>Explanation</h5>
+      <p>{{ result.explanation }}</p>
+
+      <h5>Recommendation</h5>
+      <p>{{ result.recommendation }}</p>
+
+      <a href="{{ url_for('download_report', report_id=report_id) }}" class="btn btn-dark">
+        Download Full Report (PDF)
+      </a>
+      <a href="/" class="btn btn-outline-secondary ms-2">Analyze another file</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
