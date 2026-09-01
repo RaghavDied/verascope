@@ -178,15 +178,68 @@
 #     app.run(debug=True, port=5000)
 
 
-import datetime
-from flask import Flask, render_template, request
+# import datetime
+# from flask import Flask, render_template, request
+# import os
+# from inference import analyze_image, analyze_video
+
+# app = Flask(__name__)
+
+# UPLOAD_FOLDER = "uploads"
+# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# IMAGE_EXTS = {"jpg", "jpeg", "png"}
+# VIDEO_EXTS = {"mp4", "avi"}
+# ALLOWED_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
+# @app.route("/")
+# def home():
+#     return render_template("index.html")
+
+# @app.route("/analyze", methods=["POST"])
+# def analyze():
+#     file = request.files["media"]
+
+#     if file.filename == "" or "." not in file.filename:
+#         return render_template("index.html", error="Please choose a valid file.")
+
+#     ext = file.filename.rsplit(".", 1)[1].lower()
+
+#     if ext not in ALLOWED_EXTS:
+#         return render_template("index.html", error=f"Unsupported file type: .{ext}. Please upload JPG/PNG/JPEG or MP4/AVI.")
+
+#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
+#     file.save(save_path)
+
+#     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+#     if ext in IMAGE_EXTS:
+#         result = analyze_image(save_path)
+#         media_type = "image"
+#     else:
+#         result = analyze_video(save_path)
+#         media_type = "video"
+
+#     # return render_template("result.html", result=result, media_type=media_type)
+#     return render_template("result.html", result=result, media_type=media_type, upload_time=upload_time, filename=file.filename)
+
+# if __name__ == "__main__":
+#     app.run(debug=True, port=5000)
+
+
+
+from flask import Flask, render_template, request, send_from_directory
 import os
+import datetime
+import uuid
 from inference import analyze_image, analyze_video
+from report import generate_report_pdf
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
+REPORTS_FOLDER = "reports"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(REPORTS_FOLDER, exist_ok=True)
 
 IMAGE_EXTS = {"jpg", "jpeg", "png"}
 VIDEO_EXTS = {"mp4", "avi"}
@@ -212,6 +265,7 @@ def analyze():
     file.save(save_path)
 
     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     if ext in IMAGE_EXTS:
         result = analyze_image(save_path)
         media_type = "image"
@@ -219,8 +273,22 @@ def analyze():
         result = analyze_video(save_path)
         media_type = "video"
 
-    # return render_template("result.html", result=result, media_type=media_type)
-    return render_template("result.html", result=result, media_type=media_type, upload_time=upload_time, filename=file.filename)
+    report_id = uuid.uuid4().hex[:8]
+    report_path = os.path.join(REPORTS_FOLDER, f"{report_id}.pdf")
+    generate_report_pdf(result, file.filename, upload_time, media_type, report_path)
+
+    return render_template(
+        "result.html",
+        result=result,
+        media_type=media_type,
+        upload_time=upload_time,
+        filename=file.filename,
+        report_id=report_id,
+    )
+
+@app.route("/download_report/<report_id>")
+def download_report(report_id):
+    return send_from_directory(REPORTS_FOLDER, f"{report_id}.pdf", as_attachment=True)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

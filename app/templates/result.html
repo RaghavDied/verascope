@@ -23,7 +23,7 @@
 
   <p>{{ result.explanation }}</p>
   <p><i>{{ result.recommendation }}</i></p>
-
+  <p><a href="{{ url_for('download_report', report_id=report_id) }}">Download Full Report (PDF)</a></p>
   <a href="/">Analyze another file</a>
 </body>
 </html>
