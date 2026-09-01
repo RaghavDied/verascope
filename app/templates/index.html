@@ -5,7 +5,11 @@
 </head>
 <body>
   <h1>VeraScope</h1>
-  <p>Upload an image or video to check if it's real or fake.</p>
+  <p>Upload an image (JPG/PNG) or video (MP4/AVI) to check if it's real or fake.</p>
+
+  {% if error %}
+    <p style="color:red;"><b>{{ error }}</b></p>
+  {% endif %}
 
   <form action="/analyze" method="post" enctype="multipart/form-data">
     <input type="file" name="media" accept=".jpg,.jpeg,.png,.mp4,.avi" required>

@@ -139,6 +139,46 @@
 
 
 
+# from flask import Flask, render_template, request
+# import os
+# from inference import analyze_image, analyze_video
+
+# app = Flask(__name__)
+
+# UPLOAD_FOLDER = "uploads"
+# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# IMAGE_EXTS = {"jpg", "jpeg", "png"}
+# VIDEO_EXTS = {"mp4", "avi"}
+
+# @app.route("/")
+# def home():
+#     return render_template("index.html")
+
+# @app.route("/analyze", methods=["POST"])
+# def analyze():
+#     file = request.files["media"]
+#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
+#     file.save(save_path)
+
+#     ext = file.filename.rsplit(".", 1)[1].lower()
+
+#     if ext in IMAGE_EXTS:
+#         result = analyze_image(save_path)
+#         media_type = "image"
+#     elif ext in VIDEO_EXTS:
+#         result = analyze_video(save_path)
+#         media_type = "video"
+#     else:
+#         return "Unsupported file type.", 400
+
+#     return render_template("result.html", result=result, media_type=media_type)
+
+# if __name__ == "__main__":
+#     app.run(debug=True, port=5000)
+
+
+import datetime
 from flask import Flask, render_template, request
 import os
 from inference import analyze_image, analyze_video
@@ -150,6 +190,7 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 IMAGE_EXTS = {"jpg", "jpeg", "png"}
 VIDEO_EXTS = {"mp4", "avi"}
+ALLOWED_EXTS = IMAGE_EXTS | VIDEO_EXTS
 
 @app.route("/")
 def home():
@@ -158,21 +199,28 @@ def home():
 @app.route("/analyze", methods=["POST"])
 def analyze():
     file = request.files["media"]
-    save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(save_path)
+
+    if file.filename == "" or "." not in file.filename:
+        return render_template("index.html", error="Please choose a valid file.")
 
     ext = file.filename.rsplit(".", 1)[1].lower()
 
+    if ext not in ALLOWED_EXTS:
+        return render_template("index.html", error=f"Unsupported file type: .{ext}. Please upload JPG/PNG/JPEG or MP4/AVI.")
+
+    save_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    file.save(save_path)
+
+    upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     if ext in IMAGE_EXTS:
         result = analyze_image(save_path)
         media_type = "image"
-    elif ext in VIDEO_EXTS:
+    else:
         result = analyze_video(save_path)
         media_type = "video"
-    else:
-        return "Unsupported file type.", 400
 
-    return render_template("result.html", result=result, media_type=media_type)
+    # return render_template("result.html", result=result, media_type=media_type)
+    return render_template("result.html", result=result, media_type=media_type, upload_time=upload_time, filename=file.filename)
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

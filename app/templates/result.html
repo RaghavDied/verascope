@@ -5,6 +5,7 @@
 </head>
 <body>
   <h1>VeraScope</h1>
+  <p>File: {{ filename }} | Uploaded: {{ upload_time }}</p>
   <p>Media type: {{ media_type }}</p>
   <h2>{{ result.prediction }} — {{ result.confidence_pct }}% confidence</h2>
   <p>Real: {{ result.real_pct }}% | Fake: {{ result.fake_pct }}%</p>
