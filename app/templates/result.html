@@ -5,11 +5,12 @@
 </head>
 <body>
   <h1>VeraScope</h1>
-  <h2>{{ result.prediction }} - {{ result.confidence_pct }}% confidence</h2>
+  <p>Media type: {{ media_type }}</p>
+  <h2>{{ result.prediction }} — {{ result.confidence_pct }}% confidence</h2>
   <p>Real: {{ result.real_pct }}% | Fake: {{ result.fake_pct }}%</p>
 
   {% if media_type == "video" %}
-  <p>Analyzed {{ result.frames_analyzed }} sampled frames - {{ result.suspicious_frame_count }} flagged as suspicious.</p>
+    <p>Frames analyzed: {{ result.frames_analyzed }} | Frames flagged fake: {{ result.frames_flagged_fake }}</p>
   {% endif %}
 
   <p>{{ result.explanation }}</p>

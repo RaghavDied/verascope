@@ -95,24 +95,65 @@
 #     app.run(debug=True, port=5000)
 
 
+# from flask import Flask, render_template, request
+# import os
+# from inference import analyze_image
+# from video_inference import analyze_video
+
+# app = Flask(__name__)
+
+# UPLOAD_FOLDER = "uploads"
+# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+# IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
+# VIDEO_EXTS = {".mp4", ".avi"}
+
+
+# @app.route("/")
+# def home():
+#     return render_template("index.html")
+
+
+# @app.route("/analyze", methods=["POST"])
+# def analyze():
+#     file = request.files["media"]
+#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
+#     file.save(save_path)
+
+#     ext = os.path.splitext(file.filename)[1].lower()
+
+#     if ext in VIDEO_EXTS:
+#         result = analyze_video(save_path)
+#         media_type = "video"
+#     elif ext in IMAGE_EXTS:
+#         result = analyze_image(save_path)
+#         media_type = "image"
+#     else:
+#         return f"Unsupported file type: {ext}", 400
+
+#     return render_template("result.html", result=result, media_type=media_type)
+
+
+# if __name__ == "__main__":
+#     app.run(debug=True, port=5000)
+
+
+
 from flask import Flask, render_template, request
 import os
-from inference import analyze_image
-from video_inference import analyze_video
+from inference import analyze_image, analyze_video
 
 app = Flask(__name__)
 
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
-VIDEO_EXTS = {".mp4", ".avi"}
-
+IMAGE_EXTS = {"jpg", "jpeg", "png"}
+VIDEO_EXTS = {"mp4", "avi"}
 
 @app.route("/")
 def home():
     return render_template("index.html")
-
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
@@ -120,19 +161,18 @@ def analyze():
     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
     file.save(save_path)
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = file.filename.rsplit(".", 1)[1].lower()
 
-    if ext in VIDEO_EXTS:
-        result = analyze_video(save_path)
-        media_type = "video"
-    elif ext in IMAGE_EXTS:
+    if ext in IMAGE_EXTS:
         result = analyze_image(save_path)
         media_type = "image"
+    elif ext in VIDEO_EXTS:
+        result = analyze_video(save_path)
+        media_type = "video"
     else:
-        return f"Unsupported file type: {ext}", 400
+        return "Unsupported file type.", 400
 
     return render_template("result.html", result=result, media_type=media_type)
-
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
