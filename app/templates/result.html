@@ -13,6 +13,13 @@
     <p>Frames analyzed: {{ result.frames_analyzed }} | Frames flagged fake: {{ result.frames_flagged_fake }}</p>
   {% endif %}
 
+  <h3>Explainability Heatmap</h3>
+  {% if result.heatmap_url %}
+    <img src="{{ result.heatmap_url }}" width="300">
+  {% else %}
+    <p><i>(No heatmap yet — this will show the Grad-CAM output once the real model is connected.)</i></p>
+  {% endif %}
+
   <p>{{ result.explanation }}</p>
   <p><i>{{ result.recommendation }}</i></p>
 
