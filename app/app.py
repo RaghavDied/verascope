@@ -4,10 +4,12 @@ import datetime
 import uuid
 from flask import Flask, render_template, request, send_from_directory, redirect, url_for
 
-# Ensure project root is in path
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+# Ensure both app directory and project root are in sys.path
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.abspath(os.path.join(APP_DIR, '..'))
+for p in (APP_DIR, PROJECT_ROOT):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from inference import analyze_image, FaceNotFoundError
 from video_inference import analyze_video
