@@ -72,6 +72,25 @@
             </div>
           </div>
         </div>
+
+        {% if result.prob_neural is defined or result.prob_diffusion is defined %}
+        <div class="row g-2 mt-2 pt-3 border-top border-secondary">
+          <div class="col-sm-6">
+            <div class="p-2 rounded bg-dark border border-secondary text-center">
+              <div class="text-secondary small">Neural Face Forensics (EfficientNet-B4)</div>
+              <div class="fw-bold {{ 'text-danger' if result.prob_neural > 50 else 'text-success' }}">{{ result.prob_neural }}% Face-Swap Risk</div>
+              <div class="text-muted" style="font-size: 0.72rem;">Detects Autoencoder & GAN artifacts</div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="p-2 rounded bg-dark border border-secondary text-center">
+              <div class="text-secondary small">Spectral & Sensor Noise Forensics</div>
+              <div class="fw-bold {{ 'text-danger' if result.prob_diffusion > 50 else 'text-success' }}">{{ result.prob_diffusion }}% Generative AI Risk</div>
+              <div class="text-muted" style="font-size: 0.72rem;">Detects Diffusion Models & Smoothness</div>
+            </div>
+          </div>
+        </div>
+        {% endif %}
       </div>
 
       <!-- Visual Explainability Evidence (XAI) -->
