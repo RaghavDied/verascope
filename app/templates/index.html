@@ -1,22 +1,152 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-md-7">
-    <div class="card p-4">
-      <h4 class="mb-1">Upload media for verification</h4>
-      <p class="text-muted">Supported: JPG, PNG, JPEG (image) or MP4, AVI (video)</p>
+  <div class="col-lg-8">
 
-      {% if error %}
-        <div class="alert alert-danger">{{ error }}</div>
-      {% endif %}
+    <!-- Hero Header -->
+    <div class="text-center mb-4">
+      <h1 class="display-6 fw-bold text-white mb-2">Verify Media Authenticity</h1>
+      <p class="text-secondary lead fs-6">
+        Inspect suspicious images and videos for generative AI manipulation, face swaps, and deepfakes with explainable evidence.
+      </p>
+    </div>
 
-      <form action="/analyze" method="post" enctype="multipart/form-data">
-        <div class="mb-3">
-          <input class="form-control" type="file" name="media" accept=".jpg,.jpeg,.png,.mp4,.avi" required>
+    <!-- Error / Alert Message -->
+    {% if error %}
+      <div class="alert {{ 'alert-warning' if warning_level == 'warning' else 'alert-danger' }} d-flex align-items-center gap-2 mb-4 shadow-sm" role="alert">
+        <i class="bi {{ 'bi-exclamation-triangle-fill' if warning_level == 'warning' else 'bi-x-circle-fill' }} fs-5"></i>
+        <div>{{ error }}</div>
+      </div>
+    {% endif %}
+
+    <!-- Upload Card -->
+    <div class="card card-custom p-4 mb-4">
+      <form action="/analyze" method="post" enctype="multipart/form-data" id="uploadForm" onsubmit="showLoading()">
+        
+        <div class="dropzone-container mb-3" id="dropzone" onclick="document.getElementById('mediaInput').click()">
+          <i class="bi bi-cloud-arrow-up fs-1 text-primary mb-2 d-block"></i>
+          <h5 class="fw-semibold text-white mb-1">Click to browse or drag & drop media here</h5>
+          <p class="text-secondary small mb-3">
+            Supported formats: <b>JPG, PNG, JPEG</b> (Images) or <b>MP4, AVI, MOV</b> (Videos)
+          </p>
+
+          <input class="d-none" type="file" id="mediaInput" name="media" accept=".jpg,.jpeg,.png,.mp4,.avi,.mov" required onchange="handleFileSelect(this)">
+          
+          <button type="button" class="btn btn-outline-primary btn-sm px-3">
+            <i class="bi bi-folder2-open me-1"></i> Choose File
+          </button>
         </div>
-        <button type="submit" class="btn btn-dark w-100">Analyze</button>
+
+        <!-- Selected File Preview Container -->
+        <div id="filePreview" class="d-none mb-3 p-3 rounded bg-dark border border-secondary">
+          <div class="d-flex align-items-center justify-content-between">
+            <div class="d-flex align-items-center gap-2 text-truncate">
+              <i class="bi bi-file-earmark-play fs-4 text-info" id="fileIcon"></i>
+              <div>
+                <div class="fw-semibold text-white small text-truncate" id="fileName">file.jpg</div>
+                <div class="text-secondary small" id="fileSize">0 KB</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger" onclick="resetFileSelection()">
+              <i class="bi bi-x"></i>
+            </button>
+          </div>
+          <div class="mt-2 text-center" id="previewMediaContainer"></div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold fs-6 shadow-sm" id="submitBtn">
+          <i class="bi bi-search me-1"></i> Analyze Authenticity & Generate Heatmap
+        </button>
       </form>
     </div>
+
+    <!-- Feature Info Cards -->
+    <div class="row g-3">
+      <div class="col-md-4">
+        <div class="card card-custom p-3 h-100 text-center">
+          <div class="text-primary fs-3 mb-2"><i class="bi bi-person-bounding-box"></i></div>
+          <h6 class="text-white fw-semibold mb-1">MTCNN Face Extraction</h6>
+          <p class="text-secondary small mb-0">Pre-crops facial regions to isolate manipulated boundaries and artifact cues.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card card-custom p-3 h-100 text-center">
+          <div class="text-info fs-3 mb-2"><i class="bi bi-cpu"></i></div>
+          <h6 class="text-white fw-semibold mb-1">EfficientNet-B4 AI</h6>
+          <p class="text-secondary small mb-0">Deep convolutional model evaluating subtle blending and generative anomalies.</p>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card card-custom p-3 h-100 text-center">
+          <div class="text-success fs-3 mb-2"><i class="bi bi-file-earmark-pdf"></i></div>
+          <h6 class="text-white fw-semibold mb-1">Explainable Report</h6>
+          <p class="text-secondary small mb-0">Produces Grad-CAM visual heatmaps and downloadable PDF forensic certificates.</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const dropzone = document.getElementById('dropzone');
+  const mediaInput = document.getElementById('mediaInput');
+  const filePreview = document.getElementById('filePreview');
+  const fileName = document.getElementById('fileName');
+  const fileSize = document.getElementById('fileSize');
+  const previewMediaContainer = document.getElementById('previewMediaContainer');
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    }, false);
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropzone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    }, false);
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    if (dt && dt.files && dt.files.length) {
+      mediaInput.files = dt.files;
+      handleFileSelect(mediaInput);
+    }
+  });
+
+  function handleFileSelect(input) {
+    if (input.files && input.files[0]) {
+      const file = input.files[0];
+      fileName.textContent = file.name;
+      fileSize.textContent = (file.size / 1024).toFixed(1) + " KB";
+      filePreview.classList.remove('d-none');
+      
+      previewMediaContainer.innerHTML = '';
+      const ext = file.name.split('.').pop().toLowerCase();
+      if (['jpg', 'jpeg', 'png'].includes(ext)) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          const img = document.createElement('img');
+          img.src = e.target.result;
+          img.style.maxHeight = '140px';
+          img.className = 'rounded border border-secondary my-1';
+          previewMediaContainer.appendChild(img);
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  }
+
+  function resetFileSelection() {
+    mediaInput.value = '';
+    filePreview.classList.add('d-none');
+    previewMediaContainer.innerHTML = '';
+  }
+</script>
 {% endblock %}

@@ -1,368 +1,126 @@
-# from flask import Flask
-
-# app = Flask(__name__)
-
-# @app.route("/")
-# def home():
-#     return "VeraScope is alive."
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-
-
-
-# from flask import Flask, render_template, request
-# import os
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-#     return f"Got your file: {file.filename}. Saved successfully."
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-
-# from flask import Flask, render_template, request
-# import os
-# from inference import analyze_image
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     result = analyze_image(save_path)
-
-#     return f"""
-#     <h2>{result['prediction']} — {result['confidence_pct']}% confidence</h2>
-#     <p>Real: {result['real_pct']}% | Fake: {result['fake_pct']}%</p>
-#     <p>{result['explanation']}</p>
-#     <p><i>{result['recommendation']}</i></p>
-#     """
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-# from flask import Flask, render_template, request
-# import os
-# from inference import analyze_image
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     result = analyze_image(save_path)
-
-#     return render_template("result.html", result=result)
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-# from flask import Flask, render_template, request
-# import os
-# from inference import analyze_image
-# from video_inference import analyze_video
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
-# VIDEO_EXTS = {".mp4", ".avi"}
-
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     ext = os.path.splitext(file.filename)[1].lower()
-
-#     if ext in VIDEO_EXTS:
-#         result = analyze_video(save_path)
-#         media_type = "video"
-#     elif ext in IMAGE_EXTS:
-#         result = analyze_image(save_path)
-#         media_type = "image"
-#     else:
-#         return f"Unsupported file type: {ext}", 400
-
-#     return render_template("result.html", result=result, media_type=media_type)
-
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-
-# from flask import Flask, render_template, request
-# import os
-# from inference import analyze_image, analyze_video
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# IMAGE_EXTS = {"jpg", "jpeg", "png"}
-# VIDEO_EXTS = {"mp4", "avi"}
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     ext = file.filename.rsplit(".", 1)[1].lower()
-
-#     if ext in IMAGE_EXTS:
-#         result = analyze_image(save_path)
-#         media_type = "image"
-#     elif ext in VIDEO_EXTS:
-#         result = analyze_video(save_path)
-#         media_type = "video"
-#     else:
-#         return "Unsupported file type.", 400
-
-#     return render_template("result.html", result=result, media_type=media_type)
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-# import datetime
-# from flask import Flask, render_template, request
-# import os
-# from inference import analyze_image, analyze_video
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# IMAGE_EXTS = {"jpg", "jpeg", "png"}
-# VIDEO_EXTS = {"mp4", "avi"}
-# ALLOWED_EXTS = IMAGE_EXTS | VIDEO_EXTS
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-
-#     if file.filename == "" or "." not in file.filename:
-#         return render_template("index.html", error="Please choose a valid file.")
-
-#     ext = file.filename.rsplit(".", 1)[1].lower()
-
-#     if ext not in ALLOWED_EXTS:
-#         return render_template("index.html", error=f"Unsupported file type: .{ext}. Please upload JPG/PNG/JPEG or MP4/AVI.")
-
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-#     if ext in IMAGE_EXTS:
-#         result = analyze_image(save_path)
-#         media_type = "image"
-#     else:
-#         result = analyze_video(save_path)
-#         media_type = "video"
-
-#     # return render_template("result.html", result=result, media_type=media_type)
-#     return render_template("result.html", result=result, media_type=media_type, upload_time=upload_time, filename=file.filename)
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-
-# from flask import Flask, render_template, request, send_from_directory
-# import os
-# import datetime
-# import uuid
-# from inference import analyze_image, analyze_video
-# from report import generate_report_pdf
-
-# app = Flask(__name__)
-
-# UPLOAD_FOLDER = "uploads"
-# REPORTS_FOLDER = "reports"
-# os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-# os.makedirs(REPORTS_FOLDER, exist_ok=True)
-
-# IMAGE_EXTS = {"jpg", "jpeg", "png"}
-# VIDEO_EXTS = {"mp4", "avi"}
-# ALLOWED_EXTS = IMAGE_EXTS | VIDEO_EXTS
-
-# @app.route("/")
-# def home():
-#     return render_template("index.html")
-
-# @app.route("/analyze", methods=["POST"])
-# def analyze():
-#     file = request.files["media"]
-
-#     if file.filename == "" or "." not in file.filename:
-#         return render_template("index.html", error="Please choose a valid file.")
-
-#     ext = file.filename.rsplit(".", 1)[1].lower()
-
-#     if ext not in ALLOWED_EXTS:
-#         return render_template("index.html", error=f"Unsupported file type: .{ext}. Please upload JPG/PNG/JPEG or MP4/AVI.")
-
-#     save_path = os.path.join(UPLOAD_FOLDER, file.filename)
-#     file.save(save_path)
-
-#     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-#     if ext in IMAGE_EXTS:
-#         result = analyze_image(save_path)
-#         media_type = "image"
-#     else:
-#         result = analyze_video(save_path)
-#         media_type = "video"
-
-#     report_id = uuid.uuid4().hex[:8]
-#     report_path = os.path.join(REPORTS_FOLDER, f"{report_id}.pdf")
-#     generate_report_pdf(result, file.filename, upload_time, media_type, report_path)
-
-#     return render_template(
-#         "result.html",
-#         result=result,
-#         media_type=media_type,
-#         upload_time=upload_time,
-#         filename=file.filename,
-#         report_id=report_id,
-#     )
-
-# @app.route("/download_report/<report_id>")
-# def download_report(report_id):
-#     return send_from_directory(REPORTS_FOLDER, f"{report_id}.pdf", as_attachment=True)
-
-# if __name__ == "__main__":
-#     app.run(debug=True, port=5000)
-
-
-from flask import Flask, render_template, request, send_from_directory
 import os
+import sys
 import datetime
 import uuid
-from inference import analyze_image, analyze_video
+from flask import Flask, render_template, request, send_from_directory, redirect, url_for
+
+# Ensure project root is in path
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from inference import analyze_image, FaceNotFoundError
+from video_inference import analyze_video
 from report import generate_report_pdf
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100 MB max upload
 
-UPLOAD_FOLDER = "uploads"
-REPORTS_FOLDER = "reports"
-OUTPUTS_FOLDER = "outputs"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
+REPORTS_FOLDER = os.path.join(BASE_DIR, "reports")
+OUTPUTS_FOLDER = os.path.join(BASE_DIR, "outputs")
+
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(REPORTS_FOLDER, exist_ok=True)
 os.makedirs(OUTPUTS_FOLDER, exist_ok=True)
 
 IMAGE_EXTS = {"jpg", "jpeg", "png"}
-VIDEO_EXTS = {"mp4", "avi"}
+VIDEO_EXTS = {"mp4", "avi", "mov"}
 ALLOWED_EXTS = IMAGE_EXTS | VIDEO_EXTS
+
 
 @app.route("/")
 def home():
     return render_template("index.html")
 
+
 @app.route("/analyze", methods=["POST"])
 def analyze():
+    if "media" not in request.files:
+        return render_template("index.html", error="No media file provided. Please choose a file to analyze.")
+
     file = request.files["media"]
 
-    if file.filename == "" or "." not in file.filename:
+    if not file or file.filename == "" or "." not in file.filename:
         return render_template("index.html", error="Please choose a valid file.")
 
     ext = file.filename.rsplit(".", 1)[1].lower()
 
     if ext not in ALLOWED_EXTS:
-        return render_template("index.html", error=f"Unsupported file type: .{ext}. Please upload JPG/PNG/JPEG or MP4/AVI.")
+        return render_template(
+            "index.html",
+            error=f"Unsupported file format (.{ext}). Allowed types: Images ({', '.join(IMAGE_EXTS)}) or Videos ({', '.join(VIDEO_EXTS)})."
+        )
 
-    save_path = os.path.join(UPLOAD_FOLDER, file.filename)
+    # Generate a unique job identifier
+    job_id = uuid.uuid4().hex[:8]
+    safe_filename = f"{job_id}_{os.path.basename(file.filename)}"
+    save_path = os.path.join(UPLOAD_FOLDER, safe_filename)
     file.save(save_path)
 
     upload_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    job_id = uuid.uuid4().hex[:8]
     heatmap_path = os.path.join(OUTPUTS_FOLDER, f"{job_id}_heatmap.jpg")
-
-    if ext in IMAGE_EXTS:
-        result = analyze_image(save_path, heatmap_path)
-        media_type = "image"
-    else:
-        result = analyze_video(save_path, heatmap_path)
-        media_type = "video"
-
+    face_path = os.path.join(OUTPUTS_FOLDER, f"{job_id}_face.jpg")
     report_path = os.path.join(REPORTS_FOLDER, f"{job_id}.pdf")
-    generate_report_pdf(result, file.filename, upload_time, media_type, report_path)
 
-    return render_template(
-        "result.html",
-        result=result,
-        media_type=media_type,
-        upload_time=upload_time,
-        filename=file.filename,
-        report_id=job_id,
-    )
+    try:
+        if ext in IMAGE_EXTS:
+            result = analyze_image(save_path, heatmap_path=heatmap_path, face_path=face_path)
+            media_type = "image"
+        else:
+            result = analyze_video(save_path, heatmap_path=heatmap_path, face_path=face_path)
+            media_type = "video"
+
+        # Generate Evidence Verification PDF Report
+        generate_report_pdf(
+            result=result,
+            filename=file.filename,
+            upload_time=upload_time,
+            media_type=media_type,
+            out_path=report_path,
+        )
+
+        return render_template(
+            "result.html",
+            result=result,
+            media_type=media_type,
+            upload_time=upload_time,
+            filename=file.filename,
+            report_id=job_id,
+        )
+
+    except FaceNotFoundError as fnfe:
+        return render_template(
+            "index.html",
+            error=str(fnfe),
+            warning_level="warning"
+        )
+    except Exception as e:
+        return render_template(
+            "index.html",
+            error=f"An error occurred during forensic analysis: {str(e)}"
+        )
+
 
 @app.route("/outputs/<filename>")
 def serve_output(filename):
     return send_from_directory(OUTPUTS_FOLDER, filename)
 
+
 @app.route("/download_report/<report_id>")
 def download_report(report_id):
-    return send_from_directory(REPORTS_FOLDER, f"{report_id}.pdf", as_attachment=True)
+    report_file = f"{report_id}.pdf"
+    file_path = os.path.join(REPORTS_FOLDER, report_file)
+    if not os.path.exists(file_path):
+        return "Report not found or expired.", 404
+    return send_from_directory(
+        REPORTS_FOLDER,
+        report_file,
+        as_attachment=True,
+        download_name=f"VeraScope_Verification_{report_id}.pdf"
+    )
+
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    app.run(debug=True, host="127.0.0.1", port=5000)

@@ -5,6 +5,9 @@ pillow
 torch
 torchvision
 timm
+facenet-pytorch
 grad-cam
 reportlab
 werkzeug
+scikit-learn
+tqdm
