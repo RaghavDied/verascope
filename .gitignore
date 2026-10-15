@@ -7,3 +7,6 @@ app/reports/
 test_artifacts/
 models/
 *.pt
+verascope-git/
+verascope-master/
+verascope-ishani-training/
