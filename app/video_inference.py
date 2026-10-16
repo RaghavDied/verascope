@@ -6,8 +6,9 @@ from PIL import Image
 
 from inference import (
     get_model,
-    crop_face,
+    detect_and_crop_faces,
     classify_face,
+    analyze_spectral_and_sensor_artifacts,
     FaceNotFoundError,
     device,
 )
@@ -51,13 +52,13 @@ def sample_frames(video_path, num_frames=12):
 
 def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
     """
-    Executes frame-level deepfake forensic analysis on video:
-    1. Evenly samples up to num_frames across the duration.
-    2. Detects and extracts faces using MTCNN on each frame.
-    3. Runs EfficientNet-B4 classification on detected faces.
-    4. Identifies the key evidence frame (highest anomaly for fake, or representative frame).
+    Executes frame-level deepfake forensic analysis on video with multi-face support:
+    1. Evenly samples frames across the duration.
+    2. Detects ALL faces in each frame using multi-face MTCNN.
+    3. Analyzes each detected face using EfficientNet-B4 & spectral forensics.
+    4. Identifies key suspicious frame and face.
     5. Generates Grad-CAM heatmap overlay for the key evidence frame.
-    6. Aggregates multi-frame probabilities into a verdict with temporal consistency stats.
+    6. Aggregates multi-frame, multi-face probabilities into a verdict.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Video file not found: {file_path}")
@@ -67,20 +68,36 @@ def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
         raise ValueError("Could not read frames from the uploaded video file.")
 
     frame_results = []
+    total_faces_inspected = 0
 
     for f_idx, ts_sec, bgr_frame in sampled:
         rgb_frame = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2RGB)
         pil_frame = Image.fromarray(rgb_frame)
-        face_pil, box = crop_face(pil_frame)
 
-        if face_pil is not None:
-            prob_fake = classify_face(face_pil)
+        # Detect all faces in this frame
+        faces_in_frame = detect_and_crop_faces(pil_frame)
+
+        if faces_in_frame:
+            total_faces_inspected += len(faces_in_frame)
+            # Evaluate all faces in this frame
+            frame_face_scores = []
+            for face_item in faces_in_frame:
+                f_pil = face_item["face_pil"]
+                prob_neural = classify_face(f_pil)
+                prob_diff, _ = analyze_spectral_and_sensor_artifacts(f_pil)
+                face_fake_score = max(prob_neural, prob_diff)
+                frame_face_scores.append((face_fake_score, f_pil))
+
+            # Primary score for this frame is the highest face score
+            worst_score, worst_face_pil = max(frame_face_scores, key=lambda x: x[0])
+
             frame_results.append({
                 "frame_index": f_idx,
                 "timestamp_sec": ts_sec,
-                "prob_fake": prob_fake,
-                "score_pct": round(prob_fake * 100, 1),
-                "face_pil": face_pil,
+                "prob_fake": worst_score,
+                "score_pct": round(worst_score * 100, 1),
+                "faces_in_frame": len(faces_in_frame),
+                "face_pil": worst_face_pil,
             })
 
     if not frame_results:
@@ -92,20 +109,25 @@ def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
 
     fake_probs = [fr["prob_fake"] for fr in frame_results]
     avg_fake_pct = round(100.0 * sum(fake_probs) / len(fake_probs), 1)
-    real_pct = round(100.0 - avg_fake_pct, 1)
-    prediction = "Fake" if avg_fake_pct > 50.0 else "Real"
-    confidence_pct = avg_fake_pct if prediction == "Fake" else real_pct
+    max_fake_pct = round(100.0 * max(fake_probs), 1)
 
+    # If multiple frames show high confidence fake, flag as fake
     flagged_count = sum(1 for p in fake_probs if p > 0.5)
     analyzed_count = len(frame_results)
 
+    # Robust decision: flag if either average > 50% OR at least 25% of frames strongly manipulated
+    is_fake = (avg_fake_pct > 50.0) or (flagged_count >= max(1, analyzed_count // 4) and max_fake_pct > 75.0)
+
+    prediction = "Fake" if is_fake else "Real"
+    confidence_pct = max_fake_pct if prediction == "Fake" else round(100.0 - avg_fake_pct, 1)
+
+    real_pct = round(100.0 - avg_fake_pct, 1)
+
     # Select key evidence frame:
-    # If Fake: frame with highest fake probability
-    # If Real: frame closest to the median score
     if prediction == "Fake":
         key_result = max(frame_results, key=lambda x: x["prob_fake"])
     else:
-        median_prob = np.median(fake_probs)
+        median_prob = float(np.median(fake_probs))
         key_result = min(frame_results, key=lambda x: abs(x["prob_fake"] - median_prob))
 
     # Save key evidence face crop
@@ -129,6 +151,7 @@ def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
             "frame": fr["frame_index"],
             "timestamp": f"{fr['timestamp_sec']:.1f}s",
             "fake_pct": fr["score_pct"],
+            "faces_count": fr["faces_in_frame"],
             "flagged": fr["prob_fake"] > 0.5,
         }
         for fr in frame_results
@@ -137,21 +160,21 @@ def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
     # Generate explanation
     if prediction == "Fake":
         explanation = (
-            f"VeraScope classified this video as manipulated (Fake) with {confidence_pct}% aggregate confidence. "
-            f"Across {analyzed_count} face-bearing frames, {flagged_count} frame(s) displayed severe deepfake "
-            f"manipulation markers. The Grad-CAM heatmap highlights anomalous synthetic features in the most "
-            f"suspicious frame (Frame #{key_result['frame_index']} at {key_result['timestamp_sec']:.1f}s, "
-            f"{key_result['score_pct']}% fake probability)."
+            f"VeraScope classified this video as manipulated (Fake) with {confidence_pct}% confidence. "
+            f"Across {analyzed_count} sampled frames ({total_faces_inspected} total face instances inspected), "
+            f"{flagged_count} frame(s) displayed severe deepfake manipulation markers. "
+            f"The key evidence was detected in Frame #{key_result['frame_index']} at {key_result['timestamp_sec']:.1f}s "
+            f"({key_result['score_pct']}% manipulation index)."
         )
         recommendation = (
-            "High risk video manipulation. Evidence suggests face-swapping (e.g. DeepFaceLab/Roop) or neural "
-            "re-enactment. Do not authenticate without independent forensic verification."
+            "High risk video manipulation. Evidence suggests targeted face-swapping or neural re-enactment. "
+            "Do not authenticate without independent forensic verification."
         )
     else:
         explanation = (
             f"VeraScope verified this video as authentic (Real) with {confidence_pct}% aggregate confidence. "
-            f"All {analyzed_count} face-bearing frames maintained natural biometric coherence, natural motion "
-            f"blur, and consistent facial boundaries with zero persistent manipulation signatures."
+            f"All {analyzed_count} face-bearing frames ({total_faces_inspected} face instances) maintained natural "
+            f"biometric coherence, authentic motion continuity, and consistent optical sensor noise."
         )
         recommendation = (
             "Authentic media signature. No systematic deepfake manipulation patterns detected across "
@@ -164,6 +187,7 @@ def analyze_video(file_path, heatmap_path=None, face_path=None, num_frames=12):
         "real_pct": real_pct,
         "fake_pct": avg_fake_pct,
         "frames_analyzed": analyzed_count,
+        "total_faces_inspected": total_faces_inspected,
         "frames_flagged_fake": flagged_count,
         "suspicious_frame_count": flagged_count,
         "frame_scores": frame_scores,

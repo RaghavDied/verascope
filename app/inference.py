@@ -1,9 +1,10 @@
 import os
 import sys
+import io
 import numpy as np
 import cv2
 import torch
-from PIL import Image
+from PIL import Image, ImageChops, ImageEnhance
 from facenet_pytorch import MTCNN
 from torchvision import transforms
 
@@ -58,46 +59,76 @@ def get_model():
 
 
 def get_mtcnn():
-    """Singleton getter for the MTCNN face detector."""
+    """Singleton getter for multi-face MTCNN face detector."""
     global _mtcnn
     if _mtcnn is None:
-        _mtcnn = MTCNN(image_size=224, margin=20, keep_all=False, post_process=False, device=device)
+        _mtcnn = MTCNN(
+            keep_all=True,
+            min_face_size=20,
+            thresholds=[0.5, 0.6, 0.6],
+            post_process=False,
+            device=device,
+        )
     return _mtcnn
 
 
-def crop_face(pil_img):
+def detect_and_crop_faces(pil_img):
     """
-    Extracts the face using MTCNN with direct tensor output (matching training preprocessing),
-    with bounding box fallback.
+    Detects and crops ALL faces present in a PIL Image.
     Returns:
-        (face_pil, bounding_box) or (None, None) if no face detected.
+        list of dicts: [
+            {"face_pil": PIL.Image, "box": (x1, y1, x2, y2), "prob": float},
+            ...
+        ]
     """
     detector = get_mtcnn()
+    w, h = pil_img.size
 
-    # 1. Direct MTCNN crop matching Ishani's exact training preprocessing
-    try:
-        face_tensor = detector(pil_img)
-        if face_tensor is not None:
-            face_np = face_tensor.permute(1, 2, 0).cpu().numpy().astype('uint8')
-            return Image.fromarray(face_np), None
-    except Exception:
-        pass
+    boxes, probs = detector.detect(pil_img)
+    faces_list = []
 
-    # 2. Bounding box fallback
-    boxes, _ = detector.detect(pil_img)
     if boxes is not None and len(boxes) > 0:
-        areas = [(b[2] - b[0]) * (b[3] - b[1]) for b in boxes]
-        best_box = boxes[np.argmax(areas)]
-        w, h = pil_img.size
-        x1, y1, x2, y2 = best_box
-        margin_w = (x2 - x1) * 0.15
-        margin_h = (y2 - y1) * 0.15
-        crop_x1 = max(0, int(x1 - margin_w))
-        crop_y1 = max(0, int(y1 - margin_h))
-        crop_x2 = min(w, int(x2 + margin_w))
-        crop_y2 = min(h, int(y2 + margin_h))
-        return pil_img.crop((crop_x1, crop_y1, crop_x2, crop_y2)), (crop_x1, crop_y1, crop_x2, crop_y2)
+        for i, box in enumerate(boxes):
+            prob = float(probs[i]) if probs is not None else 1.0
+            if prob < 0.60:
+                continue
 
+            x1, y1, x2, y2 = box
+            box_w = x2 - x1
+            box_h = y2 - y1
+
+            # Filter tiny noise boxes
+            if box_w < 20 or box_h < 20:
+                continue
+
+            # Crop with balanced 15% margin
+            margin_w = box_w * 0.15
+            margin_h = box_h * 0.15
+            crop_x1 = max(0, int(x1 - margin_w))
+            crop_y1 = max(0, int(y1 - margin_h))
+            crop_x2 = min(w, int(x2 + margin_w))
+            crop_y2 = min(h, int(y2 + margin_h))
+
+            face_pil = pil_img.crop((crop_x1, crop_y1, crop_x2, crop_y2))
+            faces_list.append({
+                "face_pil": face_pil,
+                "box": (crop_x1, crop_y1, crop_x2, crop_y2),
+                "prob": prob,
+            })
+
+    # Sort faces by bounding box area (largest face first)
+    faces_list.sort(
+        key=lambda f: (f["box"][2] - f["box"][0]) * (f["box"][3] - f["box"][1]),
+        reverse=True,
+    )
+    return faces_list
+
+
+def crop_face(pil_img):
+    """Backwards-compatible single-face getter returning the primary face."""
+    faces = detect_and_crop_faces(pil_img)
+    if faces:
+        return faces[0]["face_pil"], faces[0]["box"]
     return None, None
 
 
@@ -116,22 +147,70 @@ def classify_face(face_pil):
     return prob_fake
 
 
+def compute_spectral_slope(gray):
+    """
+    Calculates the 2D radial azimuthal power spectrum slope (log-log polyfit).
+    Natural scenes follow power-law decay alpha ~ -2.5 to -2.85.
+    Diffusion / Generative models typically show steep roll-off (alpha < -3.10)
+    or periodic frequency spikes.
+    """
+    h, w = gray.shape
+    f = np.fft.fftshift(np.fft.fft2(gray.astype(np.float32)))
+    mag_sq = np.abs(f) ** 2
+    cy, cx = h // 2, w // 2
+    y, x = np.ogrid[:h, :w]
+    r = np.sqrt((x - cx) ** 2 + (y - cy) ** 2).astype(int)
+    max_r = min(cy, cx)
+
+    if max_r < 15:
+        return -2.7
+
+    radial_profile = np.zeros(max_r)
+    for i in range(1, max_r):
+        mask = (r == i)
+        if np.any(mask):
+            radial_profile[i] = np.mean(mag_sq[mask])
+
+    freqs = np.arange(1, max_r)
+    powers = radial_profile[1:] + 1e-9
+    valid = powers > 1e-6
+
+    if np.sum(valid) > 10:
+        slope, _ = np.polyfit(np.log(freqs[valid]), np.log(powers[valid]), 1)
+        return float(slope)
+    return -2.7
+
+
+def compute_error_level_analysis(pil_img, quality=90):
+    """
+    Error Level Analysis (ELA) measures JPEG compression error variance.
+    Spliced face swaps often exhibit quantization discrepancy against the background.
+    """
+    try:
+        buf = io.BytesIO()
+        pil_img.save(buf, 'JPEG', quality=quality)
+        buf.seek(0)
+        resaved = Image.open(buf)
+        diff = ImageChops.difference(pil_img, resaved)
+        diff_arr = np.array(diff, dtype=np.float32)
+        return float(np.mean(diff_arr)), float(np.std(diff_arr))
+    except Exception:
+        return 0.5, 0.5
+
+
 def analyze_spectral_and_sensor_artifacts(pil_img):
     """
-    Multi-modal forensic analysis for diffusion & generative AI models:
-    - 2D Fourier (FFT) high-frequency decay analysis
-    - Laplacian texture gradient distribution (detects plastic skin smoothing)
-    - Sensor noise residual analysis (detects absence of physical camera CMOS noise)
-    
-    Returns:
-        prob_diffusion (float): Probability in [0, 1] that media is AI generated.
-        metrics (dict): Forensic measurements.
+    Comprehensive multi-domain forensic evaluation for generative AI & diffusion detection:
+    1. FFT High-Frequency Ratio & Azimuthal Spectral Slope
+    2. Laplacian Gradient Distribution (Synthetic skin smoothing vs natural texture)
+    3. CMOS/CCD Sensor Noise Residuals (PRNU proxy)
+    4. Error Level Analysis (ELA) Compression Discrepancy
     """
     cv_img = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
     h, w = cv_img.shape[:2]
     gray = cv2.cvtColor(cv_img, cv2.COLOR_BGR2GRAY)
 
-    # 1. FFT High-Frequency Spectral Ratio
+    # 1. FFT High Frequency Ratio & Radial Slope
     f = np.fft.fftshift(np.fft.fft2(gray.astype(np.float32)))
     mag = np.abs(f)
     cy, cx = h // 2, w // 2
@@ -139,49 +218,66 @@ def analyze_spectral_and_sensor_artifacts(pil_img):
     r_mid = max(min(h, w) // 4, 10)
     r_outer = max(min(h, w) // 2, 20)
     y, x = np.ogrid[:h, :w]
-    dist = np.sqrt((x - cx)**2 + (y - cy)**2)
+    dist = np.sqrt((x - cx) ** 2 + (y - cy) ** 2)
     low_f = np.mean(mag[dist < r_inner])
     high_f = np.mean(mag[(dist >= r_mid) & (dist < r_outer)])
     spectral_ratio = float(high_f / (low_f + 1e-9))
+    spectral_slope = compute_spectral_slope(gray)
 
-    # 2. Laplacian texture variance (sharp natural skin vs synthetic smoothing)
+    # 2. Laplacian Texture Gradient
     lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
-    # 3. Sensor noise residual (PRNU proxy)
+    # 3. Sensor Noise Residuals
     denoised = cv2.medianBlur(gray, 3)
-    noise_std = float(np.std(cv2.absdiff(gray, denoised)))
+    noise_residual = cv2.absdiff(gray, denoised)
+    noise_std = float(np.std(noise_residual))
 
-    # Cumulative forensic score
+    # 4. Error Level Analysis (ELA)
+    ela_mean, ela_std = compute_error_level_analysis(pil_img)
+
+    # Multi-factor score calibration
     diff_score = 0.0
-    if spectral_ratio < 0.024:
-        diff_score += 0.55
-    elif spectral_ratio < 0.029:
-        diff_score += 0.25
 
-    if noise_std < 1.6:
-        diff_score += 0.35
-    elif noise_std < 2.0:
+    # Spectral decay trigger
+    if spectral_ratio < 0.024:
+        diff_score += 0.40
+    elif spectral_ratio < 0.029:
+        diff_score += 0.20
+
+    # Steep spectral slope trigger (diffusion signature)
+    if spectral_slope < -3.10:
+        diff_score += 0.25
+    elif spectral_slope < -2.95:
         diff_score += 0.15
 
+    # Sensor noise trigger
+    if noise_std < 1.60:
+        diff_score += 0.30
+    elif noise_std < 2.00:
+        diff_score += 0.15
+
+    # Plastic skin smoothing trigger
     if lap_var < 50.0:
-        diff_score += 0.20
+        diff_score += 0.15
 
     diff_score = min(diff_score, 0.99)
     return diff_score, {
         "spectral_ratio": round(spectral_ratio, 4),
+        "spectral_slope": round(spectral_slope, 2),
         "laplacian_variance": round(lap_var, 1),
         "noise_std": round(noise_std, 2),
+        "ela_mean": round(ela_mean, 2),
+        "ela_std": round(ela_std, 2),
     }
 
 
-def analyze_image(file_path, heatmap_path=None, face_path=None):
+def analyze_image(file_path, output_dir=None, job_id=None, heatmap_path=None, face_path=None):
     """
-    Executes the full multi-modal forensic pipeline:
-    1. MTCNN Face Detection & Isolation
-    2. EfficientNet-B4 Spatial Convolutional Classification (GAN/FaceSwap specialist)
-    3. Spectral & Sensor Noise Forensic Analysis (Diffusion/Generative AI specialist)
-    4. Forensic Score Fusion
-    5. Grad-CAM Explainability Heatmap Generation
+    Executes the comprehensive multi-face forensic pipeline:
+    1. Multi-Face Detection & Bounding Box Localization (MTCNN)
+    2. Per-Face Spatial Deep Learning (EfficientNet-B4 + Grad-CAM)
+    3. Multi-Domain Spectral, Sensor Noise, and ELA Forensics
+    4. Per-Face & Global Forensic Aggregation
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Image file not found: {file_path}")
@@ -191,95 +287,153 @@ def analyze_image(file_path, heatmap_path=None, face_path=None):
     except Exception as e:
         raise ValueError(f"Could not open image file ({str(e)}). Please verify the file is a standard JPG or PNG.")
 
-    face_pil, box = crop_face(pil_img)
+    job_id = job_id or os.path.splitext(os.path.basename(file_path))[0]
+    output_dir = output_dir or os.path.join(APP_DIR, "outputs")
+    os.makedirs(output_dir, exist_ok=True)
 
-    # If MTCNN didn't detect a face, check if image is already a face or evaluate whole frame
-    if face_pil is None:
+    # 1. Detect ALL faces
+    detected_faces = detect_and_crop_faces(pil_img)
+
+    # Fallback: if no face found, check portrait proportions
+    if not detected_faces:
         w, h = pil_img.size
-        # Fallback: if aspect ratio is roughly portrait, treat whole image as facial candidate
-        if 0.5 < w / h < 1.8 and min(w, h) >= 120:
-            face_pil = pil_img
+        if 0.5 < w / h < 1.8 and min(w, h) >= 100:
+            detected_faces = [{
+                "face_pil": pil_img,
+                "box": (0, 0, w, h),
+                "prob": 0.99,
+            }]
         else:
             raise FaceNotFoundError(
-                "No human face was detected in the uploaded image. VeraScope's deepfake detection "
-                "model evaluates facial manipulation artifacts (FaceForensics++ / Deepfakes). "
-                "Please upload an image with a clearly visible human face."
+                "No human face was detected in the uploaded image. VeraScope requires clearly visible "
+                "facial biometrics to perform multi-modal deepfake forensics."
             )
 
-    # Save cropped face
-    face_url = None
-    if face_path:
-        os.makedirs(os.path.dirname(os.path.abspath(face_path)), exist_ok=True)
-        face_pil.resize((380, 380)).save(face_path)
-        face_url = "/outputs/" + os.path.basename(face_path)
-
-    # 1. Neural classification (EfficientNet-B4)
     model = get_model()
-    prob_neural = classify_face(face_pil)
 
-    # 2. Diffusion / Frequency / Sensor forensic analysis
-    prob_diffusion, forensic_metrics = analyze_spectral_and_sensor_artifacts(pil_img)
+    # 2. Global spectral and sensor forensic analysis
+    prob_diffusion_global, forensic_metrics = analyze_spectral_and_sensor_artifacts(pil_img)
 
-    # 3. Multi-Modal Forensic Fusion
-    # If either the neural face-swap detector or diffusion forensic detector triggers:
-    prob_fake = max(prob_neural, prob_diffusion)
+    # 3. Analyze EVERY detected face
+    faces_results = []
+    for idx, f_item in enumerate(detected_faces, start=1):
+        f_pil = f_item["face_pil"]
+        f_box = f_item["box"]
 
-    # Grad-CAM heatmap generation
-    heatmap_url = None
+        # Face-specific paths
+        f_face_path = os.path.join(output_dir, f"{job_id}_face_{idx}.jpg")
+        f_heatmap_path = os.path.join(output_dir, f"{job_id}_heatmap_{idx}.jpg")
+
+        f_pil.resize((380, 380)).save(f_face_path)
+
+        # Neural inference
+        prob_neural = classify_face(f_pil)
+
+        # Local face frequency/sensor check
+        prob_diff_local, _ = analyze_spectral_and_sensor_artifacts(f_pil)
+
+        # Fuse neural and diffusion score for this face
+        prob_face_fake = max(prob_neural, prob_diff_local)
+        face_fake_pct = round(prob_face_fake * 100.0, 1)
+
+        # Generate Grad-CAM for this face
+        generate_gradcam_overlay(f_pil, model=model, device=device, output_path=f_heatmap_path)
+
+        faces_results.append({
+            "face_id": idx,
+            "box": [round(c) for c in f_box],
+            "fake_pct": face_fake_pct,
+            "real_pct": round(100.0 - face_fake_pct, 1),
+            "prob_neural": round(prob_neural * 100.0, 1),
+            "prob_diffusion": round(prob_diff_local * 100.0, 1),
+            "status": "Flagged Manipulated" if face_fake_pct > 50.0 else "Authentic",
+            "is_manipulated": face_fake_pct > 50.0,
+            "face_path": f_face_path,
+            "face_url": f"/outputs/{os.path.basename(f_face_path)}",
+            "heatmap_path": f_heatmap_path,
+            "heatmap_url": f"/outputs/{os.path.basename(f_heatmap_path)}",
+        })
+
+    # 4. Overall Decision Aggregation
+    faces_count = len(faces_results)
+    flagged_faces = [f for f in faces_results if f["is_manipulated"]]
+    flagged_count = len(flagged_faces)
+
+    # Pick the primary evidence face:
+    # If any face is flagged, pick the one with highest fake percentage; otherwise pick Face #1
+    if flagged_faces:
+        primary_face = max(flagged_faces, key=lambda f: f["fake_pct"])
+    else:
+        primary_face = max(faces_results, key=lambda f: f["fake_pct"])
+
+    # Synchronize primary paths for legacy callers
+    if face_path:
+        primary_face_pil = detected_faces[primary_face["face_id"] - 1]["face_pil"]
+        primary_face_pil.resize((380, 380)).save(face_path)
     if heatmap_path:
-        os.makedirs(os.path.dirname(os.path.abspath(heatmap_path)), exist_ok=True)
-        generate_gradcam_overlay(face_pil, model=model, device=device, output_path=heatmap_path)
-        heatmap_url = "/outputs/" + os.path.basename(heatmap_path)
+        primary_face_pil = detected_faces[primary_face["face_id"] - 1]["face_pil"]
+        generate_gradcam_overlay(primary_face_pil, model=model, device=device, output_path=heatmap_path)
 
-    fake_pct = round(prob_fake * 100.0, 1)
-    real_pct = round(100.0 - fake_pct, 1)
-    prediction = "Fake" if fake_pct > 50.0 else "Real"
-    confidence_pct = fake_pct if prediction == "Fake" else real_pct
+    # Image-level verdict
+    max_face_fake_pct = primary_face["fake_pct"]
+    global_diff_pct = round(prob_diffusion_global * 100.0, 1)
 
-    # Determine primary detection vector for explanation
+    overall_fake_pct = max(max_face_fake_pct, global_diff_pct)
+    overall_real_pct = round(100.0 - overall_fake_pct, 1)
+    prediction = "Fake" if overall_fake_pct > 50.0 else "Real"
+    confidence_pct = overall_fake_pct if prediction == "Fake" else overall_real_pct
+
+    # Detailed Explainability Text
     if prediction == "Fake":
-        if prob_neural >= 0.50 and prob_diffusion >= 0.50:
-            vector_text = "both neural face-swap boundaries (EfficientNet-B4) and synthetic diffusion frequency anomalies"
-        elif prob_neural >= 0.50:
-            vector_text = f"EfficientNet-B4 convolutional feature maps ({round(prob_neural*100, 1)}% manipulation index), highlighting abnormal facial boundaries and blending artifacts"
+        if flagged_count > 0:
+            face_summary = f"{flagged_count} of {faces_count} detected face(s) were flagged as manipulated"
         else:
-            vector_text = (
-                f"Spectral and Sensor Forensics ({round(prob_diffusion*100, 1)}% generative AI index). "
-                f"Analysis detected synthetic texture smoothing (Laplacian {forensic_metrics['laplacian_variance']}), "
-                f"unnatural high-frequency spectral decay ({forensic_metrics['spectral_ratio']}), and absence of physical CMOS camera sensor noise"
+            face_summary = "full-frame generative AI synthesis detected"
+
+        if primary_face["prob_neural"] >= 50.0:
+            tech_vector = f"EfficientNet-B4 convolutional feature maps (Face #{primary_face['face_id']} flagged with {primary_face['prob_neural']}% face-swap anomaly index)"
+        else:
+            tech_vector = (
+                f"Multi-Domain Spectral & Sensor Noise Forensics ({global_diff_pct}% generative AI index, "
+                f"spectral slope {forensic_metrics['spectral_slope']}, noise std {forensic_metrics['noise_std']})"
             )
 
         explanation = (
-            f"VeraScope flagged this image as manipulated (Fake) with {confidence_pct}% confidence, "
-            f"identified by {vector_text}."
+            f"VeraScope verified this media as manipulated (Fake) with {confidence_pct}% confidence. "
+            f"Across multi-biometric inspection, {face_summary}. The primary alert was triggered by {tech_vector}."
         )
         recommendation = (
-            "Caution strongly advised. Media displays clear signatures of Generative AI synthesis "
-            "or face-swapping manipulation. Do not rely upon this image for identity verification or evidential purposes."
+            "Caution strongly advised. High risk of face-swapping (e.g. DeepFaceLab/Roop) or Generative AI synthesis. "
+            "Do not accept this image as genuine evidence without secondary cryptographic authentication."
         )
     else:
         explanation = (
-            f"VeraScope evaluated this image as authentic (Real) with {confidence_pct}% confidence. "
-            f"Biometric facial boundaries, CMOS sensor noise ({forensic_metrics['noise_std']}), and Fourier spectral distributions "
-            f"are consistent with natural physical camera captures without synthetic manipulation artifacts."
+            f"VeraScope verified this media as authentic (Real) with {confidence_pct}% confidence. "
+            f"All {faces_count} detected face(s) exhibited consistent natural biometric features, "
+            f"natural CMOS sensor noise (std {forensic_metrics['noise_std']}), and authentic Fourier spectral distribution "
+            f"(slope {forensic_metrics['spectral_slope']}) without synthetic manipulation boundaries."
         )
         recommendation = (
-            "Low risk of manipulation. The image exhibits authentic physical sensor noise and natural biometric textures."
+            "Low risk of manipulation. Biometric consistency and optical sensor noise patterns match unaltered photographic captures."
         )
 
     return {
         "prediction": prediction,
         "confidence_pct": confidence_pct,
-        "real_pct": real_pct,
-        "fake_pct": fake_pct,
-        "prob_neural": round(prob_neural * 100, 1),
-        "prob_diffusion": round(prob_diffusion * 100, 1),
+        "real_pct": overall_real_pct,
+        "fake_pct": overall_fake_pct,
+        "faces_count": faces_count,
+        "flagged_count": flagged_count,
+        "faces": faces_results,
+        "primary_face": primary_face,
+        "face_path": primary_face["face_path"],
+        "face_url": primary_face["face_url"],
+        "heatmap_path": primary_face["heatmap_path"],
+        "heatmap_url": primary_face["heatmap_url"],
+        "prob_neural": primary_face["prob_neural"],
+        "prob_diffusion": global_diff_pct,
         "forensic_metrics": forensic_metrics,
         "face_detected": True,
-        "face_path": face_path,
-        "face_url": face_url,
-        "heatmap_path": heatmap_path,
-        "heatmap_url": heatmap_url,
         "explanation": explanation,
         "recommendation": recommendation,
     }

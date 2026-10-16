@@ -7,10 +7,9 @@ from PIL import Image
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 APP_DIR = os.path.join(PROJECT_ROOT, 'app')
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-if APP_DIR not in sys.path:
-    sys.path.insert(0, APP_DIR)
+for p in (APP_DIR, PROJECT_ROOT):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
 from app import app
 from inference import analyze_image, FaceNotFoundError
@@ -33,6 +32,14 @@ class TestVeraScopeIntegration(unittest.TestCase):
             if os.path.exists(parent_img):
                 import shutil
                 shutil.copy(parent_img, cls.sample_image)
+
+        # Create a multi-face test image with two distinct faces side by side
+        cls.multi_face_image = os.path.join(cls.test_outputs_dir, 'multi_face_test.jpg')
+        face_img = Image.open(cls.sample_image).convert('RGB').resize((200, 200))
+        multi_canvas = Image.new('RGB', (600, 300), color=(128, 128, 128))
+        multi_canvas.paste(face_img, (30, 50))
+        multi_canvas.paste(face_img, (330, 50))
+        multi_canvas.save(cls.multi_face_image)
 
         # Create a small test video with 24 frames containing the sample face
         cls.sample_video = os.path.join(cls.test_outputs_dir, 'sample_test_vid.mp4')
@@ -70,7 +77,7 @@ class TestVeraScopeIntegration(unittest.TestCase):
         print(f"\n[PASS] Image Inference: {result['prediction']} ({result['confidence_pct']}% confidence)")
 
     def test_03_video_inference(self):
-        """Test multi-frame video inference pipeline"""
+        """Test multi-frame, multi-face video inference pipeline"""
         heatmap_path = os.path.join(self.test_outputs_dir, 'test_vid_heatmap.jpg')
         face_path = os.path.join(self.test_outputs_dir, 'test_vid_face.jpg')
 
@@ -92,8 +99,16 @@ class TestVeraScopeIntegration(unittest.TestCase):
             "confidence_pct": 98.4,
             "real_pct": 1.6,
             "fake_pct": 98.4,
+            "faces_count": 2,
+            "flagged_count": 1,
             "heatmap_path": heatmap_path,
             "face_path": face_path,
+            "forensic_metrics": {
+                "spectral_slope": -3.22,
+                "noise_std": 1.45,
+                "laplacian_variance": 42.1,
+                "ela_std": 1.34,
+            },
             "explanation": "High level of synthesis artifacts detected along facial perimeter.",
             "recommendation": "Do not authenticate without secondary forensic checks.",
         }
@@ -109,9 +124,16 @@ class TestVeraScopeIntegration(unittest.TestCase):
             data = {'media': (fp, 'test_upload.png')}
             resp = self.client.post('/analyze', data=data, content_type='multipart/form-data')
             self.assertEqual(resp.status_code, 200)
-            self.assertIn(b'Verification Assessment', resp.data)
+            self.assertIn(b'Forensic Verification Assessment', resp.data)
             self.assertIn(b'Grad-CAM', resp.data)
         print("\n[PASS] Flask /analyze endpoint succeeded")
+
+    def test_06_multi_face_detection(self):
+        """Test detection and individual analysis of multiple faces in a single image"""
+        result = analyze_image(self.multi_face_image)
+        self.assertGreaterEqual(result["faces_count"], 2)
+        self.assertEqual(len(result["faces"]), result["faces_count"])
+        print(f"\n[PASS] Multi-Face Detection: Found {result['faces_count']} faces in group image")
 
 
 if __name__ == '__main__':

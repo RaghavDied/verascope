@@ -68,7 +68,13 @@ def analyze():
 
     try:
         if ext in IMAGE_EXTS:
-            result = analyze_image(save_path, heatmap_path=heatmap_path, face_path=face_path)
+            result = analyze_image(
+                save_path,
+                output_dir=OUTPUTS_FOLDER,
+                job_id=job_id,
+                heatmap_path=heatmap_path,
+                face_path=face_path,
+            )
             media_type = "image"
         else:
             result = analyze_video(save_path, heatmap_path=heatmap_path, face_path=face_path)
