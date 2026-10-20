@@ -87,7 +87,7 @@ pip install -r requirements.txt
 ```
 
 ### 3. Model Weights
-Place the trained EfficientNet-B4 checkpoint `effnet_b4_deepfake.pt` in the `models/` directory:
+Download the trained EfficientNet-B4 checkpoint `effnet_b4_deepfake.pt` ([Google Drive Link](https://drive.google.com/file/d/1JPvr_HLEhp0uS6YGLMfN38rk8BT7UeEV/view?usp=sharing)) and place it in the `models/` directory:
 ```text
 models/
   └── effnet_b4_deepfake.pt
@@ -144,7 +144,6 @@ verascope/
 ├── training/
 │   └── train_image_model.py     # EfficientNet-B4 training pipeline
 ├── final_evaluation.csv         # Benchmark evaluation metrics
-├── MODEL_HANDOFF.md             # Model architecture & integration reference
 ├── requirements.txt             # Python package dependencies
 └── README.md                    # Project documentation
 ```
