@@ -13,3 +13,6 @@ verascope-ishani-training/
 VERASCOPE_MASTER_DOCUMENT.*
 build_docx.py
 MODEL_HANDOFF.md
+VeraScope_Review_Report*
+generate_review_2_report.py
+
