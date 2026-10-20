@@ -10,3 +10,6 @@ models/
 verascope-git/
 verascope-master/
 verascope-ishani-training/
+VERASCOPE_MASTER_DOCUMENT.*
+build_docx.py
+MODEL_HANDOFF.md
